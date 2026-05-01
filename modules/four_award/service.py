@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import List
+from typing import Any, List
 
+from . import actions, config, parser, records, replies, reviewer, util, wiki
 from .config import ENABLED, MAX_NOMINATIONS_PER_RUN
 from .parser import parse_nominations
 from .reviewer import review_nomination
@@ -36,7 +37,107 @@ def _should_mark_article_history_no(result: NominationResult) -> bool:
     return not any(issue.code in skip_codes for issue in result.issues)
 
 
-def run_four_award_sync():
+def _config_bool(value: Any, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off", ""}:
+            return False
+    return default
+
+
+def _apply_runtime_config(ctx: Any | None) -> None:
+    global ENABLED, MAX_NOMINATIONS_PER_RUN
+
+    if ctx is None or not hasattr(ctx, "config"):
+        return
+
+    cfg = ctx.config
+    get = cfg.get if hasattr(cfg, "get") else lambda key, default=None: default
+
+    wiki_code = str(get("wiki_code", config.WIKI_CODE) or config.WIKI_CODE).strip()
+    wiki_family = str(get("wiki_family", config.WIKI_FAMILY) or config.WIKI_FAMILY).strip()
+    wiki_api_url = str(get("wiki_api_url", "") or "").strip()
+    if not wiki_api_url and wiki_family == "wikipedia":
+        wiki_api_url = f"https://{wiki_code}.wikipedia.org/w/api.php"
+
+    dry_run = _config_bool(get("dry_run", config.DRY_RUN), config.DRY_RUN)
+    enabled = _config_bool(get("enabled", ENABLED), ENABLED)
+
+    ENABLED = enabled
+    MAX_NOMINATIONS_PER_RUN = int(
+        get("max_nominations_per_run", MAX_NOMINATIONS_PER_RUN)
+        or MAX_NOMINATIONS_PER_RUN
+    )
+
+    config.WIKI_CODE = wiki_code
+    config.WIKI_FAMILY = wiki_family
+    if wiki_api_url:
+        config.WIKI_API_URL = wiki_api_url
+    config.DRY_RUN = dry_run
+    config.ENABLED = enabled
+    config.MAX_NOMINATIONS_PER_RUN = MAX_NOMINATIONS_PER_RUN
+
+    if get("four_page") is not None:
+        config.FOUR_PAGE = str(get("four_page")).strip() or config.FOUR_PAGE
+    if get("records_page") is not None:
+        config.RECORDS_PAGE = str(get("records_page")).strip() or config.RECORDS_PAGE
+    if get("leaderboard_page") is not None:
+        config.LEADERBOARD_PAGE = str(get("leaderboard_page")).strip() or config.LEADERBOARD_PAGE
+
+    parser.FOUR_PAGE = config.FOUR_PAGE
+    actions.FOUR_PAGE = config.FOUR_PAGE
+    replies.FOUR_PAGE = config.FOUR_PAGE
+    reviewer.RECORDS_PAGE = config.RECORDS_PAGE
+    records.RECORDS_PAGE = config.RECORDS_PAGE
+
+    actions.ENABLE_ARTICLE_HISTORY = _config_bool(
+        get("enable_article_history", config.ENABLE_ARTICLE_HISTORY),
+        config.ENABLE_ARTICLE_HISTORY,
+    )
+    actions.ENABLE_REMOVAL = _config_bool(
+        get("enable_removal", config.ENABLE_REMOVAL),
+        config.ENABLE_REMOVAL,
+    )
+    records.ENABLE_RECORDS = _config_bool(
+        get("enable_records", config.ENABLE_RECORDS),
+        config.ENABLE_RECORDS,
+    )
+    replies.ENABLE_REPLIES = _config_bool(
+        get("enable_replies", config.ENABLE_REPLIES),
+        config.ENABLE_REPLIES,
+    )
+    replies.ENABLE_TALK_NOTICES = _config_bool(
+        get("enable_talk_notices", config.ENABLE_TALK_NOTICES),
+        config.ENABLE_TALK_NOTICES,
+    )
+    reviewer.ALLOW_AUTOMATED_APPROVAL = _config_bool(
+        get("allow_automated_approval", config.ALLOW_AUTOMATED_APPROVAL),
+        config.ALLOW_AUTOMATED_APPROVAL,
+    )
+
+    if get("award_date_override") is not None:
+        config.AWARD_DATE_OVERRIDE = str(get("award_date_override") or "").strip() or None
+        util.AWARD_DATE_OVERRIDE = config.AWARD_DATE_OVERRIDE
+
+    wiki.configure_runtime(
+        wiki_code=wiki_code,
+        wiki_family=wiki_family,
+        wiki_api_url=wiki_api_url,
+        dry_run=dry_run,
+    )
+
+
+def run_four_award_sync(ctx: Any | None = None, payload: dict[str, Any] | None = None):
+    _apply_runtime_config(ctx)
+
     if not ENABLED:
         return {"status": "disabled"}
 

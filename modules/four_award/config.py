@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import os
 
-WIKI_API_URL = os.getenv("FOUR_AWARD_WIKI_API_URL", "https://en.wikipedia.org/w/api.php")
+WIKI_CODE = os.getenv("FOUR_AWARD_WIKI_CODE", "en")
+WIKI_FAMILY = os.getenv("FOUR_AWARD_WIKI_FAMILY", "wikipedia")
+WIKI_API_URL = os.getenv(
+    "FOUR_AWARD_WIKI_API_URL",
+    f"https://{WIKI_CODE}.wikipedia.org/w/api.php",
+)
 HTTP_USER_AGENT = os.getenv(
     "FOUR_AWARD_HTTP_USER_AGENT",
     "FourAwardHelper/0.1 (User:Alachuckthebuck; https://github.com/chuckthebuck/module4awardhelper)",

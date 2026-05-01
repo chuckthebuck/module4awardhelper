@@ -6,7 +6,14 @@ from typing import Optional
 
 import requests
 
-from .config import DRY_RUN, EDIT_TAG_LINK, HTTP_USER_AGENT, WIKI_API_URL
+from .config import (
+    DRY_RUN,
+    EDIT_TAG_LINK,
+    HTTP_USER_AGENT,
+    WIKI_API_URL,
+    WIKI_CODE,
+    WIKI_FAMILY,
+)
 from .models import PageCreation
 
 
@@ -31,6 +38,8 @@ class SaveResult:
 class WikiClient:
     def __init__(self) -> None:
         self._site = None
+        self.wiki_code = WIKI_CODE
+        self.wiki_family = WIKI_FAMILY
 
     @property
     def site(self):
@@ -39,9 +48,17 @@ class WikiClient:
         if self._site is None:
             if ensure_pywikibot_env is not None:
                 ensure_pywikibot_env(strict=True)
-            self._site = pywikibot.Site("en", "wikipedia")
+            self._site = pywikibot.Site(self.wiki_code, self.wiki_family)
             self._site.login()
         return self._site
+
+    def configure_site(self, *, wiki_code: str | None = None, wiki_family: str | None = None) -> None:
+        next_code = str(wiki_code or self.wiki_code).strip() or self.wiki_code
+        next_family = str(wiki_family or self.wiki_family).strip() or self.wiki_family
+        if next_code != self.wiki_code or next_family != self.wiki_family:
+            self.wiki_code = next_code
+            self.wiki_family = next_family
+            self._site = None
 
     def page(self, title: str):
         return pywikibot.Page(self.site, title)
@@ -134,6 +151,21 @@ _client = WikiClient()
 
 def get_wiki() -> WikiClient:
     return _client
+
+
+def configure_runtime(
+    *,
+    wiki_code: str | None = None,
+    wiki_family: str | None = None,
+    wiki_api_url: str | None = None,
+    dry_run: bool | None = None,
+) -> None:
+    global DRY_RUN, WIKI_API_URL
+    _client.configure_site(wiki_code=wiki_code, wiki_family=wiki_family)
+    if wiki_api_url is not None:
+        WIKI_API_URL = str(wiki_api_url).strip() or WIKI_API_URL
+    if dry_run is not None:
+        DRY_RUN = bool(dry_run)
 
 
 def _parse_mw_timestamp(value: str | None) -> Optional[datetime]:
