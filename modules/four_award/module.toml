@@ -1,0 +1,12 @@
+name = "four_award"
+repo = "https://github.com/chuckthebuck/module4awardhelper"
+entry_point = "modules.four_award.blueprint"
+redis_namespace = "four_award"
+title = "Four Award"
+
+[[cron_jobs]]
+name = "four-award-sync"
+schedule = "*/15 * * * *"
+endpoint = "/api/v1/four_award/cron/run"
+timeout_seconds = 600
+enabled = true
