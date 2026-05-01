@@ -2,11 +2,13 @@ name = "four_award"
 repo = "https://github.com/chuckthebuck/module4awardhelper"
 entry_point = "modules.four_award.blueprint"
 redis_namespace = "four_award"
-title = "Four Award"
+title = "Chuck the 4awardhelper"
 
-[[cron_jobs]]
+[[jobs]]
 name = "four-award-sync"
-schedule = "*/15 * * * *"
-endpoint = "/api/v1/four_award/cron/run"
+run = "every 15 minutes"
+handler = "chuck_the_4awardhelper.service:run_four_award_sync"
+execution_mode = "k8s_job"
+concurrency_policy = "forbid"
 timeout_seconds = 600
 enabled = true

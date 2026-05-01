@@ -6,7 +6,7 @@ from typing import Optional
 
 import requests
 
-from .config import DRY_RUN, EDIT_TAG_LINK, WIKI_API_URL
+from .config import DRY_RUN, EDIT_TAG_LINK, HTTP_USER_AGENT, WIKI_API_URL
 from .models import PageCreation
 
 
@@ -94,7 +94,7 @@ class WikiClient:
             "format": "json",
             "formatversion": "2",
         }
-        data = requests.get(WIKI_API_URL, params=params, timeout=20).json()
+        data = requests.get(WIKI_API_URL, params=params, headers=_headers(), timeout=20).json()
         pages = data.get("query", {}).get("pages", [])
         return bool(pages and not pages[0].get("missing"))
 
@@ -107,7 +107,7 @@ class WikiClient:
             "formatversion": "2",
         }
         params.update(revision_params)
-        response = requests.get(WIKI_API_URL, params=params, timeout=30)
+        response = requests.get(WIKI_API_URL, params=params, headers=_headers(), timeout=30)
         response.raise_for_status()
         return response.json()
 
@@ -144,3 +144,7 @@ def _parse_mw_timestamp(value: str | None) -> Optional[datetime]:
 
 def _mw_timestamp(value: datetime) -> str:
     return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _headers() -> dict[str, str]:
+    return {"User-Agent": HTTP_USER_AGENT}

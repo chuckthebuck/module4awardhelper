@@ -15,13 +15,9 @@ def _record_row(record: FourAwardRecord, ordinal: int) -> str:
     suffix = f" ({ordinal})" if ordinal > 1 else ""
     return (
         "|-\n"
-        f"| [[User:{record.user}|{display}]]{suffix}\n"
-        f"| [[{record.article}]]\n"
-        f"| {to_dts(record.award_date)}\n"
-        f"| {to_dts(record.creation_date)}\n"
-        f"| {to_dts(record.dyk_date)}\n"
-        f"| {to_dts(record.ga_date)}\n"
-        f"| {to_dts(record.fa_date)}"
+        f"| [[User:{record.user}|{display}]]{suffix} || [[{record.article}]] || "
+        f"{to_dts(record.award_date)} || {to_dts(record.creation_date)} || "
+        f"{to_dts(record.dyk_date)} || {to_dts(record.ga_date)} || {to_dts(record.fa_date)}"
     )
 
 
@@ -49,6 +45,10 @@ def _insert_rows(table: str, records: list[FourAwardRecord]) -> str:
     row_chunks = re.split(r"(?m)(?=^\|-\s*$)", table)
     header = row_chunks[0]
     existing_rows = row_chunks[1:]
+    if not existing_rows and "|}" in header:
+        before_end, table_end = header.rsplit("|}", 1)
+        header = before_end
+        existing_rows = ["|}" + table_end]
 
     def row_user(row: str) -> str:
         match = re.search(r"\[\[User:([^|\]]+)", row, re.I)
@@ -72,7 +72,10 @@ def _insert_rows(table: str, records: list[FourAwardRecord]) -> str:
                     end_index = index
                     break
             existing_rows.insert(end_index, new_row + "\n")
-    return header.rstrip() + "\n" + "".join(existing_rows).rstrip() + "\n"
+    output = header.rstrip() + "\n" + "".join(existing_rows).rstrip() + "\n"
+    if re.search(r"\|-\s*\n\|\}\s*$", table) and not re.search(r"\|-\s*\n\|\}\s*$", output):
+        output = re.sub(r"\|\}\s*$", "|-\n|}", output)
+    return output + ("\n" if table.endswith("\n") and not output.endswith("\n") else "")
 
 
 def sync_records_table(records: Iterable[FourAwardRecord]) -> int:

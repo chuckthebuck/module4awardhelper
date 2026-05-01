@@ -46,3 +46,13 @@ Recommended rollout:
 PYTHONPATH=. python -m py_compile modules/four_award/*.py
 PYTHONPATH=. python -m pytest -q
 ```
+
+## Historic replay tests
+
+Replay cases compare the bot's in-memory edits against known after-revisions, without saving to Wikipedia:
+
+```bash
+PYTHONPATH=. python -m modules.four_award.replay tests/fixtures/four_award_replay_case.example.json
+```
+
+Use `before_revid` and `expected_revid` for each page touched by an old review diff. Add `page_creation` and `revision_users` evidence so the reviewer can reproduce the old approval/failure decision deterministically.

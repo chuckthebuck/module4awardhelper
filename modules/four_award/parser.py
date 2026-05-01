@@ -90,6 +90,16 @@ def _heading_before(text: str, offset: int) -> tuple[str, int]:
     return clean_wiki_value(headings[-1].group(1)), len(headings)
 
 
+def _heading_blocks(text: str) -> list[tuple[str, int, str]]:
+    headings = list(re.finditer(r"^={3,}\s*(.*?)\s*={3,}\s*$", text, re.M))
+    blocks: list[tuple[str, int, str]] = []
+    for index, heading in enumerate(headings):
+        start = heading.start()
+        end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
+        blocks.append((clean_wiki_value(heading.group(1)), index + 1, text[start:end].strip()))
+    return blocks
+
+
 def _nomination_block(text: str, raw_template: str, offset: int) -> str:
     heading = list(re.finditer(r"^={3,}\s*.*?\s*={3,}\s*$", text[:offset], re.M))
     if not heading:
@@ -102,6 +112,34 @@ def _nomination_block(text: str, raw_template: str, offset: int) -> str:
     return text[start:end].strip()
 
 
+def _first_link_after_label(block: str, label: str) -> str:
+    match = re.search(rf"'''{re.escape(label)}'''\s*:\s*(.*)", block, re.I)
+    if not match:
+        return ""
+    line = match.group(1)
+    links = re.findall(r"\[\[([^|\]#]+)(?:#[^|\]]*)?(?:\|[^\]]*)?\]\]", line)
+    return normalize_title(links[-1]) if links else ""
+
+
+def _manual_nomination_from_block(section_title: str, section_index: int, block: str) -> FourAwardNomination | None:
+    article_match = re.search(r"Article:\s*'''?\s*\[\[([^|\]#]+)", block, re.I)
+    if not article_match:
+        return None
+    users = split_users(section_title)
+    if not users:
+        sig_users = re.findall(r"\[\[\s*User:([^|\]/#]+)", block, re.I)
+        users = split_users(", ".join(sig_users))
+    article = normalize_title(clean_wiki_value(article_match.group(1)))
+    return FourAwardNomination(
+        section_title=section_title or article,
+        section_index=section_index,
+        raw_text=block,
+        users=users,
+        article=article,
+        dyknom=_first_link_after_label(block, "DYK"),
+    )
+
+
 def parse_nominations(page_text: str | None = None) -> List[FourAwardNomination]:
     page_text = page_text if page_text is not None else get_wiki().get_text(FOUR_PAGE)
     nominations_text = _section_body(page_text, "Current nominations")
@@ -109,16 +147,19 @@ def parse_nominations(page_text: str | None = None) -> List[FourAwardNomination]
         return []
 
     nominations: List[FourAwardNomination] = []
+    template_blocks: set[str] = set()
     for raw_template, offset in _iter_template_spans(nominations_text, "Four Award Nomination"):
         params = _split_template_params(raw_template)
         article = normalize_title(clean_wiki_value(params.get("article") or params.get("1")))
         users = split_users(params.get("user"))
         section_title, section_index = _heading_before(nominations_text, offset)
+        raw_text = _nomination_block(nominations_text, raw_template, offset)
+        template_blocks.add(raw_text)
         nominations.append(
             FourAwardNomination(
                 section_title=section_title or article,
                 section_index=section_index,
-                raw_text=_nomination_block(nominations_text, raw_template, offset),
+                raw_text=raw_text,
                 users=users,
                 article=article,
                 dyknom=clean_wiki_value(params.get("dyknom")),
@@ -126,4 +167,11 @@ def parse_nominations(page_text: str | None = None) -> List[FourAwardNomination]
                 comments=clean_wiki_value(params.get("comments")),
             )
         )
+    for section_title, section_index, block in _heading_blocks(nominations_text):
+        if block in template_blocks or "Article:" not in block:
+            continue
+        nomination = _manual_nomination_from_block(section_title, section_index, block)
+        if nomination:
+            nominations.append(nomination)
+    nominations.sort(key=lambda nomination: nomination.section_index)
     return nominations

@@ -4,6 +4,8 @@ import re
 from datetime import date, datetime, timedelta
 from typing import Optional
 
+from .config import AWARD_DATE_OVERRIDE
+
 
 def normalize_user(value: str | None) -> str:
     value = (value or "").replace("_", " ").strip()
@@ -42,6 +44,8 @@ def to_iso(value: str | date | None) -> str:
 
 
 def to_dts(value: str | date | None) -> str:
+    if isinstance(value, str) and re.search(r"\{\{\s*dts\s*\|", value, re.I):
+        return value
     parsed = parse_date(value) if isinstance(value, str) else value
     if not parsed:
         return ""
@@ -52,6 +56,10 @@ def date_window(center: date | None, before_days: int, after_days: int) -> tuple
     if center is None:
         return None, None
     return center - timedelta(days=before_days), center + timedelta(days=after_days)
+
+
+def award_date() -> str:
+    return AWARD_DATE_OVERRIDE or date.today().isoformat()
 
 
 def strip_comments(text: str) -> str:

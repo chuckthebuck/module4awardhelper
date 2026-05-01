@@ -6,7 +6,7 @@ from typing import Optional
 
 from .config import ALLOW_AUTOMATED_APPROVAL, RECORDS_PAGE
 from .models import FourAwardNomination, FourAwardRecord, NominationResult, VerificationIssue
-from .util import clean_wiki_value, date_window, normalize_title, normalize_user, parse_date, to_iso
+from .util import award_date, clean_wiki_value, date_window, normalize_title, normalize_user, parse_date, to_iso
 from .wiki import get_wiki
 
 
@@ -22,17 +22,20 @@ def _contains_record(records_text: str, article: str, users: list[str]) -> bool:
 
 
 def _action_date(text: str, action_name: str) -> Optional[date]:
+    value = _action_value(text, action_name)
+    return parse_date(value)
+
+
+def _action_value(text: str, action_name: str) -> str:
     for match in re.finditer(r"\|\s*action(\d+)\s*=\s*([^\n|]+)", text, re.I):
         if action_name.casefold() not in match.group(2).casefold():
             continue
         index = match.group(1)
-        date_match = re.search(rf"\|\s*action{index}date\s*=\s*([^\n|]+)", text, re.I)
+        date_match = re.search(rf"^\|\s*action{index}date\s*=\s*([^\n]+)", text, re.I | re.M)
         if date_match:
-            parsed = parse_date(date_match.group(1))
-            if parsed:
-                return parsed
-    direct = re.search(rf"\|\s*{re.escape(action_name)}(?:date|_date)?\s*=\s*([^\n|]+)", text, re.I)
-    return parse_date(direct.group(1)) if direct else None
+            return date_match.group(1).strip()
+    direct = re.search(rf"^\|\s*{re.escape(action_name)}(?:date|_date)?\s*=\s*([^\n]+)", text, re.I | re.M)
+    return direct.group(1).strip() if direct else ""
 
 
 def _action_link(text: str, action_name: str) -> str:
@@ -40,7 +43,7 @@ def _action_link(text: str, action_name: str) -> str:
         if action_name.casefold() not in match.group(2).casefold():
             continue
         index = match.group(1)
-        link_match = re.search(rf"\|\s*action{index}link\s*=\s*([^\n|]+)", text, re.I)
+        link_match = re.search(rf"^\|\s*action{index}link\s*=\s*([^\n]+)", text, re.I | re.M)
         if link_match:
             return _link_target(link_match.group(1))
     return ""
@@ -74,17 +77,17 @@ def _has_fa_status(history: str) -> bool:
 
 
 def _record_for(nomination: FourAwardNomination, history: str, creation_date: Optional[date]) -> FourAwardRecord:
-    dyk_date = _action_date(history, "DYK")
-    ga_date = _action_date(history, "GAN") or _action_date(history, "GA")
-    fa_date = _action_date(history, "FAC") or _action_date(history, "FA")
+    dyk_date = _action_value(history, "DYK")
+    ga_date = _action_value(history, "GAN") or _action_value(history, "GA")
+    fa_date = _action_value(history, "FAC") or _action_value(history, "FA")
     return FourAwardRecord(
         user=nomination.users[0],
         article=nomination.article,
-        award_date=date.today().isoformat(),
+        award_date=award_date(),
         creation_date=to_iso(creation_date),
-        dyk_date=to_iso(dyk_date),
-        ga_date=to_iso(ga_date),
-        fa_date=to_iso(fa_date),
+        dyk_date=dyk_date,
+        ga_date=ga_date,
+        fa_date=fa_date,
     )
 
 
