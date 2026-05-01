@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 
@@ -48,9 +48,39 @@ def to_dts(value: str | date | None) -> str:
     return "{{dts|%04d|%02d|%02d}}" % (parsed.year, parsed.month, parsed.day)
 
 
+def date_window(center: date | None, before_days: int, after_days: int) -> tuple[date | None, date | None]:
+    if center is None:
+        return None, None
+    return center - timedelta(days=before_days), center + timedelta(days=after_days)
+
+
 def strip_comments(text: str) -> str:
     return re.sub(r"<!--.*?-->", "", text, flags=re.S)
 
 
 def one_line(text: str) -> str:
     return re.sub(r"\s+", " ", text.replace("\n", " ")).strip()
+
+
+def clean_wiki_value(value: str | None) -> str:
+    value = strip_comments(value or "")
+    value = re.sub(r"'''?", "", value)
+    value = re.sub(r"\[\[(?:[^|\]]+\|)?([^\]]+)\]\]", r"\1", value)
+    value = re.sub(r"\{\{\s*u(?:ser)?\s*\|\s*([^}|]+).*?\}\}", r"\1", value, flags=re.I)
+    return one_line(value)
+
+
+def split_users(value: str | None) -> list[str]:
+    cleaned = clean_wiki_value(value)
+    if not cleaned:
+        return []
+    parts = re.split(r"\s*(?:,|;|/|\band\b|&)\s*", cleaned)
+    users: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        part = normalize_title(part)
+        key = normalize_user(part)
+        if part and key not in seen:
+            users.append(part)
+            seen.add(key)
+    return users

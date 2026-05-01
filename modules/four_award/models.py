@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 from typing import List, Optional, Literal
 
 
@@ -11,6 +12,9 @@ class FourAwardNomination:
     raw_text: str
     users: List[str]
     article: str
+    dyknom: Optional[str] = None
+    dyk: Optional[str] = None
+    comments: Optional[str] = None
 
 
 @dataclass
@@ -23,6 +27,12 @@ class FourAwardRecord:
     ga_date: Optional[str]
     fa_date: Optional[str]
     display_user: Optional[str] = None
+
+
+@dataclass
+class PageCreation:
+    user: Optional[str]
+    date: Optional[date]
 
 
 @dataclass

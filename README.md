@@ -6,7 +6,13 @@ This repository is intended to be loaded by the Buckbot module framework using `
 
 ## Safety model
 
-The module is dry-run by default. Live actions require explicit environment flags:
+The module has per-action switches plus one emergency stop. To force a non-writing run, set:
+
+```bash
+FOUR_AWARD_DRY_RUN=1
+```
+
+Live action flags:
 
 ```bash
 FOUR_AWARD_DRY_RUN=0
@@ -30,6 +36,9 @@ Recommended rollout:
 * Each wikitable entry is emitted as a single line.
 * The bot replies to nominations with hidden markers to avoid duplicate replies.
 * Ambiguous judgment calls become `manual_review_needed`; the bot only approves with clear evidence and only fails on objective problems.
+* Creation is checked against the article's first MediaWiki revision plus early article edits.
+* DYK, GA, and FA credit is checked against process-page revisions/signatures and article edits during the relevant milestone windows.
+* Automated approval is disabled unless `FOUR_AWARD_ALLOW_AUTOMATED_APPROVAL=1`.
 
 ## Development
 
