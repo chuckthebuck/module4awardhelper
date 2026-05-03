@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, List
 
 from . import actions, config, parser, records, replies, reviewer, util, wiki
@@ -126,6 +127,12 @@ def _apply_runtime_config(ctx: Any | None) -> None:
     if get("award_date_override") is not None:
         config.AWARD_DATE_OVERRIDE = str(get("award_date_override") or "").strip() or None
         util.AWARD_DATE_OVERRIDE = config.AWARD_DATE_OVERRIDE
+    if get("dry_run_report_page") is not None:
+        config.DRY_RUN_REPORT_PAGE = str(get("dry_run_report_page") or "").strip()
+    config.PUBLISH_DRY_RUN_REPORT = _config_bool(
+        get("publish_dry_run_report", config.PUBLISH_DRY_RUN_REPORT),
+        config.PUBLISH_DRY_RUN_REPORT,
+    )
 
     wiki.configure_runtime(
         wiki_code=wiki_code,
@@ -137,6 +144,7 @@ def _apply_runtime_config(ctx: Any | None) -> None:
 
 def run_four_award_sync(ctx: Any | None = None, payload: dict[str, Any] | None = None):
     _apply_runtime_config(ctx)
+    wiki.reset_dry_run_edits()
 
     if not ENABLED:
         return {"status": "disabled"}
@@ -170,8 +178,104 @@ def run_four_award_sync(ctx: Any | None = None, payload: dict[str, Any] | None =
     if approved:
         sync_records_table(_approved_records(approved))
 
+    dry_run_edits = wiki.get_dry_run_edits()
+    report_text = _dry_run_report_wikitext(dry_run_edits, approved, failed, manual)
+    report_page = None
+    if (
+        config.DRY_RUN
+        and config.PUBLISH_DRY_RUN_REPORT
+        and config.DRY_RUN_REPORT_PAGE
+        and dry_run_edits
+    ):
+        report_result = wiki.publish_dry_run_report(config.DRY_RUN_REPORT_PAGE, report_text)
+        report_page = {
+            "title": report_result.title,
+            "summary": report_result.summary,
+            "saved": report_result.saved,
+        }
+
     return {
         "approved": len(approved),
         "failed": len(failed),
         "manual": len(manual),
+        "dry_run": bool(config.DRY_RUN),
+        "dry_run_edits": dry_run_edits,
+        "dry_run_report": {
+            "wikitext": report_text,
+            "published": report_page,
+        },
     }
+
+
+def _result_rows(label: str, results: list[NominationResult]) -> list[str]:
+    rows = []
+    for result in results:
+        issue_text = "; ".join(issue.reason for issue in result.issues) or ""
+        rows.append(
+            "|-\n"
+            f"| {_table_cell(label)}\n"
+            f"| [[{result.nomination.article}]]\n"
+            f"| {_table_cell(', '.join(result.nomination.users))}\n"
+            f"| {_table_cell(issue_text)}"
+        )
+    return rows
+
+
+def _table_cell(value: object) -> str:
+    return str(value or "").replace("|", "{{!}}").replace("\n", "<br>")
+
+
+def _dry_run_report_wikitext(
+    dry_run_edits: list[dict[str, object]],
+    approved: list[NominationResult],
+    failed: list[NominationResult],
+    manual: list[NominationResult],
+) -> str:
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    lines = [
+        "== Four Award dry-run report ==",
+        f"Generated at {generated_at}. This is a dry-run preview; normal target pages were not edited.",
+        "",
+        "=== Review results ===",
+        '{| class="wikitable sortable"',
+        "! Result !! Article !! Users !! Notes",
+    ]
+    result_rows = (
+        _result_rows("Approved", approved)
+        + _result_rows("Failed", failed)
+        + _result_rows("Manual review", manual)
+    )
+    lines.extend(result_rows or ["|-\n| colspan=\"4\" | No nominations were reviewed."])
+    lines.extend(
+        [
+            "|}",
+            "",
+            "=== Proposed edits ===",
+            '{| class="wikitable sortable"',
+            "! Page !! Summary !! Size change",
+        ]
+    )
+    for edit in dry_run_edits:
+        title = str(edit.get("title") or "")
+        summary = str(edit.get("summary") or "")
+        delta = int(edit.get("delta_chars") or 0)
+        lines.append(f"|-\n| [[{title}]]\n| {_table_cell(summary)}\n| {delta:+d} chars")
+    if not dry_run_edits:
+        lines.append("|-\n| colspan=\"3\" | No edits would be made.")
+    lines.extend(["|}", ""])
+
+    if dry_run_edits:
+        lines.extend(["=== Diff previews ==="])
+        for edit in dry_run_edits:
+            title = str(edit.get("title") or "")
+            diff = str(edit.get("diff") or "").strip()
+            lines.extend(
+                [
+                    f"==== {title} ====",
+                    "<syntaxhighlight lang=\"diff\">",
+                    diff or "No text diff was captured.",
+                    "</syntaxhighlight>",
+                    "",
+                ]
+            )
+    return "\n".join(lines).rstrip() + "\n"

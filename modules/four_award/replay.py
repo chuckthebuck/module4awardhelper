@@ -177,7 +177,9 @@ def run_replay_case(case: dict[str, Any]) -> dict[str, Any]:
     result = service.run_four_award_sync()
 
     expected_result = case.get("expected_result")
-    if expected_result is not None and result != expected_result:
+    if expected_result is not None and any(
+        result.get(key) != value for key, value in expected_result.items()
+    ):
         raise ReplayFailure(f"Expected result {expected_result}, got {result}")
 
     diffs: dict[str, str] = {}

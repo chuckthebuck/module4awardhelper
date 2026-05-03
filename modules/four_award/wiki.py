@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, time, timezone
+from difflib import unified_diff
 from typing import Optional
 
 import requests
@@ -137,7 +138,17 @@ class WikiClient:
     def save_text(self, title: str, text: str, summary: str) -> SaveResult:
         summary = f"{summary} {EDIT_TAG_LINK}".strip()
         if DRY_RUN:
+            _record_dry_run_edit(self, title, text, summary)
             return SaveResult(title=title, summary=summary, saved=False)
+        page = self.page(title)
+        if page.text == text:
+            return SaveResult(title=title, summary=summary, saved=False)
+        page.text = text
+        page.save(summary=summary, bot=True)
+        return SaveResult(title=title, summary=summary, saved=True)
+
+    def publish_text(self, title: str, text: str, summary: str) -> SaveResult:
+        summary = f"{summary} {EDIT_TAG_LINK}".strip()
         page = self.page(title)
         if page.text == text:
             return SaveResult(title=title, summary=summary, saved=False)
@@ -147,10 +158,26 @@ class WikiClient:
 
 
 _client = WikiClient()
+_dry_run_edits: list[dict[str, object]] = []
 
 
 def get_wiki() -> WikiClient:
     return _client
+
+
+def reset_dry_run_edits() -> None:
+    _dry_run_edits.clear()
+
+
+def get_dry_run_edits() -> list[dict[str, object]]:
+    return [dict(edit) for edit in _dry_run_edits]
+
+
+def publish_dry_run_report(title: str, text: str) -> SaveResult:
+    normalized_title = str(title or "").strip()
+    if not normalized_title.lower().startswith("user:"):
+        raise ValueError("Dry-run report page must be in userspace")
+    return _client.publish_text(normalized_title, text, "Publish Four Award dry-run report")
 
 
 def configure_runtime(
@@ -180,3 +207,42 @@ def _mw_timestamp(value: datetime) -> str:
 
 def _headers() -> dict[str, str]:
     return {"User-Agent": HTTP_USER_AGENT}
+
+
+def _record_dry_run_edit(client: WikiClient, title: str, text: str, summary: str) -> None:
+    try:
+        before = client.get_text(title)
+    except Exception as exc:
+        before = ""
+        error = str(exc)
+    else:
+        error = None
+
+    if before == text:
+        return
+
+    diff_lines = list(
+        unified_diff(
+            before.splitlines(),
+            text.splitlines(),
+            fromfile=title,
+            tofile=title,
+            lineterm="",
+            n=3,
+        )
+    )
+    preview = "\n".join(diff_lines[:80])
+    if len(diff_lines) > 80:
+        preview += f"\n... {len(diff_lines) - 80} more diff lines ..."
+
+    _dry_run_edits.append(
+        {
+            "title": title,
+            "summary": summary,
+            "before_chars": len(before),
+            "after_chars": len(text),
+            "delta_chars": len(text) - len(before),
+            "diff": preview,
+            "read_error": error,
+        }
+    )
