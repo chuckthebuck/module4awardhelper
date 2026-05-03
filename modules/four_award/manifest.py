@@ -9,6 +9,7 @@ def module_manifest():
         "redis_namespace": "four_award",
         "title": "Chuck the 4awardhelper",
         "oauth_consumer_mode": "default",
+        "rights": ["manage", "run_jobs", "edit_config"],
         "jobs": [
             {
                 "name": "four-award-sync",
@@ -21,4 +22,3 @@ def module_manifest():
             }
         ],
     }
-
