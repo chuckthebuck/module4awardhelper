@@ -4,7 +4,7 @@ import re
 from datetime import date
 from typing import Optional
 
-from .config import ALLOW_AUTOMATED_APPROVAL, RECORDS_PAGE
+from .config import ALLOW_AUTOMATED_APPROVAL, IGNORE_EXISTING_RECORDS, RECORDS_PAGE
 from .models import (
     FourAwardNomination,
     FourAwardRecord,
@@ -291,11 +291,22 @@ def review_nomination(nomination: FourAwardNomination) -> NominationResult:
         return NominationResult(nomination, "failed_to_verify", [issue], stage_checks=stages)
     stages.append(_stage("article_page", "Article page exists", "passed", "Article page exists.", pages=[nomination.article]))
 
-    if _contains_record(wiki.get_text(RECORDS_PAGE), nomination.article, nomination.users):
+    if IGNORE_EXISTING_RECORDS:
+        stages.append(
+            _stage(
+                "duplicate_record",
+                "Existing Four Award record",
+                "skipped",
+                "Existing records check skipped for historical dry-run testing.",
+                pages=[RECORDS_PAGE],
+            )
+        )
+    elif _contains_record(wiki.get_text(RECORDS_PAGE), nomination.article, nomination.users):
         issue = _issue("duplicate_record", "The article and user already appear in the Four Award records.")
         stages.append(_stage("duplicate_record", "Existing Four Award record", "failed", issue.reason, pages=[RECORDS_PAGE]))
         return NominationResult(nomination, "failed_to_verify", [issue], stage_checks=stages)
-    stages.append(_stage("duplicate_record", "Existing Four Award record", "passed", "No matching existing record was found.", pages=[RECORDS_PAGE]))
+    else:
+        stages.append(_stage("duplicate_record", "Existing Four Award record", "passed", "No matching existing record was found.", pages=[RECORDS_PAGE]))
 
     history = _article_history_template(wiki.get_text(f"Talk:{nomination.article}"))
     if not history:

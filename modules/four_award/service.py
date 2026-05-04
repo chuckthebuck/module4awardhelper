@@ -123,6 +123,11 @@ def _apply_runtime_config(ctx: Any | None) -> None:
         get("allow_automated_approval", config.ALLOW_AUTOMATED_APPROVAL),
         config.ALLOW_AUTOMATED_APPROVAL,
     )
+    config.IGNORE_EXISTING_RECORDS = _config_bool(
+        get("ignore_existing_records", config.IGNORE_EXISTING_RECORDS),
+        config.IGNORE_EXISTING_RECORDS,
+    )
+    reviewer.IGNORE_EXISTING_RECORDS = config.IGNORE_EXISTING_RECORDS
 
     if get("award_date_override") is not None:
         config.AWARD_DATE_OVERRIDE = str(get("award_date_override") or "").strip() or None
@@ -151,31 +156,40 @@ def run_four_award_sync(ctx: Any | None = None, payload: dict[str, Any] | None =
         return {"status": "disabled"}
 
     source_page_text = payload.get("four_page_text") or payload.get("page_text")
+    previous_ignore_existing_records = reviewer.IGNORE_EXISTING_RECORDS
+    if payload.get("ignore_existing_records") is not None:
+        reviewer.IGNORE_EXISTING_RECORDS = _config_bool(
+            payload.get("ignore_existing_records"),
+            reviewer.IGNORE_EXISTING_RECORDS,
+        )
     nominations = parse_nominations(str(source_page_text) if source_page_text is not None else None)
 
     approved: List[NominationResult] = []
     failed: List[NominationResult] = []
     manual: List[NominationResult] = []
 
-    for nom in nominations[:MAX_NOMINATIONS_PER_RUN]:
-        result = review_nomination(nom)
+    try:
+        for nom in nominations[:MAX_NOMINATIONS_PER_RUN]:
+            result = review_nomination(nom)
 
-        if result.status == "approved":
-            approved.append(result)
-            remove_nomination(nom)
-            set_article_history_four(nom.article, "yes")
-            reply_result(nom, result)
+            if result.status == "approved":
+                approved.append(result)
+                remove_nomination(nom)
+                set_article_history_four(nom.article, "yes")
+                reply_result(nom, result)
 
-        elif result.status == "failed_to_verify":
-            failed.append(result)
-            remove_nomination(nom)
-            if _should_mark_article_history_no(result):
-                set_article_history_four(nom.article, "no")
-            reply_result(nom, result)
+            elif result.status == "failed_to_verify":
+                failed.append(result)
+                remove_nomination(nom)
+                if _should_mark_article_history_no(result):
+                    set_article_history_four(nom.article, "no")
+                reply_result(nom, result)
 
-        else:
-            manual.append(result)
-            reply_result(nom, result)
+            else:
+                manual.append(result)
+                reply_result(nom, result)
+    finally:
+        reviewer.IGNORE_EXISTING_RECORDS = previous_ignore_existing_records
 
     if approved:
         sync_records_table(_approved_records(approved))

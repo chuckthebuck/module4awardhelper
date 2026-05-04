@@ -181,6 +181,33 @@ def test_historical_payload_page_text_is_used_instead_of_live_four_award_page():
     assert payload["result"]["reviews"][0]["article"] == "Example article"
 
 
+def test_historical_payload_can_ignore_current_records_table():
+    case = _successful_review_case()
+    historical_text = case["pages"]["Wikipedia:Four Award"]["before_text"]
+    case["settings"] = {"allow_automated_approval": True}
+    case["payload"] = {
+        "four_page_text": historical_text,
+        "ignore_existing_records": True,
+    }
+    case["pages"]["Wikipedia:Four Award/Records"]["before_text"] = (
+        "== Four Awards ==\n"
+        "{| class=\"wikitable\"\n"
+        "! User\n! Article\n"
+        "|-\n"
+        "| [[User:Example|Example]] || [[Example article]]\n"
+        "|}\n"
+    )
+    case["expected_result"] = {"approved": 1, "failed": 0, "manual": 0}
+
+    payload = run_replay_case(case)
+    stages = payload["result"]["reviews"][0]["stage_checks"]
+
+    assert any(
+        stage["key"] == "duplicate_record" and stage["status"] == "skipped"
+        for stage in stages
+    )
+
+
 def test_replay_failure_shows_diff():
     case = {
         "pages": {
