@@ -13,7 +13,7 @@ def module_manifest():
         "jobs": [
             {
                 "name": "four-award-sync",
-                "run": "every 15 minutes",
+                "run": "Daily at 00:00",
                 "handler": "chuck_the_4awardhelper.service:run_four_award_sync",
                 "execution_mode": "k8s_job",
                 "concurrency_policy": "forbid",
