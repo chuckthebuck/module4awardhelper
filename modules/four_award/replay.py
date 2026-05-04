@@ -174,7 +174,7 @@ def run_replay_case(case: dict[str, Any]) -> dict[str, Any]:
     client = build_replay_wiki(case)
     install_replay_wiki(client)
     apply_replay_settings(case)
-    result = service.run_four_award_sync()
+    result = service.run_four_award_sync(payload=case.get("payload"))
 
     expected_result = case.get("expected_result")
     if expected_result is not None and any(

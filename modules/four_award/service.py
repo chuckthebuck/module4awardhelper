@@ -10,7 +10,7 @@ from .reviewer import review_nomination
 from .records import sync_records_table
 from .replies import reply_result
 from .actions import remove_nomination, set_article_history_four
-from .models import FourAwardRecord, NominationResult
+from .models import FourAwardRecord, NominationResult, VerificationStage
 
 
 def _approved_records(results: List[NominationResult]) -> List[FourAwardRecord]:
@@ -145,11 +145,13 @@ def _apply_runtime_config(ctx: Any | None) -> None:
 def run_four_award_sync(ctx: Any | None = None, payload: dict[str, Any] | None = None):
     _apply_runtime_config(ctx)
     wiki.reset_dry_run_edits()
+    payload = payload or {}
 
     if not ENABLED:
         return {"status": "disabled"}
 
-    nominations = parse_nominations()
+    source_page_text = payload.get("four_page_text") or payload.get("page_text")
+    nominations = parse_nominations(str(source_page_text) if source_page_text is not None else None)
 
     approved: List[NominationResult] = []
     failed: List[NominationResult] = []
@@ -198,6 +200,7 @@ def run_four_award_sync(ctx: Any | None = None, payload: dict[str, Any] | None =
         "approved": len(approved),
         "failed": len(failed),
         "manual": len(manual),
+        "reviews": _review_payloads(approved + failed + manual),
         "dry_run": bool(config.DRY_RUN),
         "dry_run_edits": dry_run_edits,
         "dry_run_report": {
@@ -205,6 +208,39 @@ def run_four_award_sync(ctx: Any | None = None, payload: dict[str, Any] | None =
             "published": report_page,
         },
     }
+
+
+def _stage_payload(stage: VerificationStage) -> dict[str, object]:
+    return {
+        "key": stage.key,
+        "label": stage.label,
+        "status": stage.status,
+        "reason": stage.reason,
+        "expected_users": stage.expected_users,
+        "evidence_users": stage.evidence_users,
+        "pages": stage.pages,
+        "start": stage.start,
+        "end": stage.end,
+        "details": stage.details,
+    }
+
+
+def _review_payloads(results: list[NominationResult]) -> list[dict[str, object]]:
+    payloads: list[dict[str, object]] = []
+    for result in results:
+        payloads.append(
+            {
+                "status": result.status,
+                "article": result.nomination.article,
+                "users": result.nomination.users,
+                "issues": [
+                    {"code": issue.code, "reason": issue.reason}
+                    for issue in result.issues
+                ],
+                "stage_checks": [_stage_payload(stage) for stage in result.stage_checks],
+            }
+        )
+    return payloads
 
 
 def _result_rows(label: str, results: list[NominationResult]) -> list[str]:
@@ -264,6 +300,18 @@ def _dry_run_report_wikitext(
         lines.append("|-\n| colspan=\"3\" | No edits would be made.")
     lines.extend(["|}", ""])
 
+    detail_rows = _verification_detail_rows(approved + failed + manual)
+    if detail_rows:
+        lines.extend(
+            [
+                "=== Verification details ===",
+                '{| class="wikitable sortable"',
+                "! Article !! Stage !! Status !! Evidence !! Notes",
+            ]
+        )
+        lines.extend(detail_rows)
+        lines.extend(["|}", ""])
+
     if dry_run_edits:
         lines.extend(["=== Diff previews ==="])
         for edit in dry_run_edits:
@@ -279,3 +327,32 @@ def _dry_run_report_wikitext(
                 ]
             )
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _verification_detail_rows(results: list[NominationResult]) -> list[str]:
+    rows: list[str] = []
+    for result in results:
+        article = result.nomination.article
+        for stage in result.stage_checks:
+            evidence_parts: list[str] = []
+            if stage.expected_users:
+                evidence_parts.append("Expected: " + ", ".join(stage.expected_users))
+            if stage.evidence_users:
+                evidence_parts.append("Found: " + ", ".join(stage.evidence_users))
+            if stage.start or stage.end:
+                evidence_parts.append(f"Window: {stage.start or '?'} to {stage.end or '?'}")
+            if stage.pages:
+                evidence_parts.append("Pages: " + "; ".join(f"[[{page}]]" for page in stage.pages))
+            details = [f"{key}: {value}" for key, value in stage.details.items() if value]
+            if details:
+                evidence_parts.append("; ".join(details))
+
+            rows.append(
+                "|-\n"
+                f"| [[{article}]]\n"
+                f"| {_table_cell(stage.label)}\n"
+                f"| {_table_cell(stage.status)}\n"
+                f"| {_table_cell('<br>'.join(evidence_parts))}\n"
+                f"| {_table_cell(stage.reason)}"
+            )
+    return rows

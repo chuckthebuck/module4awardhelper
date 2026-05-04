@@ -41,6 +41,20 @@ class VerificationIssue:
     reason: str
 
 
+@dataclass
+class VerificationStage:
+    key: str
+    label: str
+    status: str
+    reason: str = ""
+    expected_users: List[str] = field(default_factory=list)
+    evidence_users: List[str] = field(default_factory=list)
+    pages: List[str] = field(default_factory=list)
+    start: Optional[str] = None
+    end: Optional[str] = None
+    details: dict[str, str] = field(default_factory=dict)
+
+
 Status = Literal["approved", "failed_to_verify", "manual_review_needed"]
 
 
@@ -50,3 +64,4 @@ class NominationResult:
     status: Status
     issues: List[VerificationIssue] = field(default_factory=list)
     record: Optional[FourAwardRecord] = None
+    stage_checks: List[VerificationStage] = field(default_factory=list)

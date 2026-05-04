@@ -5,13 +5,46 @@ from datetime import date
 from typing import Optional
 
 from .config import ALLOW_AUTOMATED_APPROVAL, RECORDS_PAGE
-from .models import FourAwardNomination, FourAwardRecord, NominationResult, VerificationIssue
+from .models import (
+    FourAwardNomination,
+    FourAwardRecord,
+    NominationResult,
+    VerificationIssue,
+    VerificationStage,
+)
 from .util import award_date, clean_wiki_value, date_window, normalize_title, normalize_user, parse_date, to_iso
 from .wiki import get_wiki
 
 
 def _issue(code: str, reason: str) -> VerificationIssue:
     return VerificationIssue(code=code, reason=reason)
+
+
+def _stage(
+    key: str,
+    label: str,
+    status: str,
+    reason: str = "",
+    *,
+    expected_users: list[str] | None = None,
+    evidence_users: set[str] | list[str] | None = None,
+    pages: list[str] | None = None,
+    start: date | None = None,
+    end: date | None = None,
+    details: dict[str, str] | None = None,
+) -> VerificationStage:
+    return VerificationStage(
+        key=key,
+        label=label,
+        status=status,
+        reason=reason,
+        expected_users=list(expected_users or []),
+        evidence_users=sorted(evidence_users or [], key=lambda value: value.casefold()),
+        pages=list(pages or []),
+        start=to_iso(start),
+        end=to_iso(end),
+        details=details or {},
+    )
 
 
 def _contains_record(records_text: str, article: str, users: list[str]) -> bool:
@@ -136,9 +169,14 @@ def _default_dyk_page(nomination: FourAwardNomination) -> str:
     return nomination.dyknom or f"Template:Did you know nominations/{nomination.article}"
 
 
-def _contribution_issues(nomination: FourAwardNomination, history: str, record: FourAwardRecord) -> list[VerificationIssue]:
+def _contribution_review(
+    nomination: FourAwardNomination,
+    history: str,
+    record: FourAwardRecord,
+) -> tuple[list[VerificationIssue], list[VerificationStage]]:
     wiki = get_wiki()
     issues: list[VerificationIssue] = []
+    stages: list[VerificationStage] = []
     creation = wiki.page_creation(nomination.article)
     creation_start, creation_end = date_window(creation.date, 0, 7)
     creation_users = set()
@@ -148,12 +186,32 @@ def _contribution_issues(nomination: FourAwardNomination, history: str, record: 
 
     missing = _missing_users(nomination.users, creation_users)
     if missing:
+        reason = "Could not verify page creation or early article edits for " + ", ".join(missing) + "."
         issues.append(
             _issue(
                 "missing_creation_contribution",
-                "Could not verify page creation or early article edits for " + ", ".join(missing) + ".",
+                reason,
             )
         )
+    else:
+        reason = "Verified page creator or early article edit by every credited user."
+    stages.append(
+        _stage(
+            "creation_contribution",
+            "Page creation / early edits",
+            "failed" if missing else "passed",
+            reason,
+            expected_users=nomination.users,
+            evidence_users=creation_users,
+            pages=[nomination.article],
+            start=creation_start,
+            end=creation_end,
+            details={
+                "creation_date": to_iso(creation.date),
+                "first_revision_user": creation.user or "",
+            },
+        )
+    )
 
     dyk_start = parse_date(record.creation_date)
     dyk_end = parse_date(record.dyk_date)
@@ -190,33 +248,66 @@ def _contribution_issues(nomination: FourAwardNomination, history: str, record: 
         evidence_users = _stage_evidence_users(nomination.article, clean_pages, start, end)
         missing = _missing_users(nomination.users, evidence_users)
         if missing:
+            reason = f"Could not verify {label} process-page participation or article edits for " + ", ".join(missing) + "."
             issues.append(
                 _issue(
                     code,
-                    f"Could not verify {label} process-page participation or article edits for " + ", ".join(missing) + ".",
+                    reason,
                 )
             )
-    return issues
+        else:
+            reason = f"Verified {label} participation or article edits by every credited user."
+        stages.append(
+            _stage(
+                code.removeprefix("missing_"),
+                f"{label} contribution",
+                "failed" if missing else "passed",
+                reason,
+                expected_users=nomination.users,
+                evidence_users=evidence_users,
+                pages=[nomination.article] + clean_pages,
+                start=start,
+                end=end,
+            )
+        )
+    return issues, stages
 
 
 def review_nomination(nomination: FourAwardNomination) -> NominationResult:
+    stages: list[VerificationStage] = []
     if not nomination.article:
-        return NominationResult(nomination, "failed_to_verify", [_issue("missing_article", "The nomination does not identify an article.")])
+        issue = _issue("missing_article", "The nomination does not identify an article.")
+        stages.append(_stage("nomination_article", "Nomination article", "failed", issue.reason))
+        return NominationResult(nomination, "failed_to_verify", [issue], stage_checks=stages)
     if not nomination.users:
-        return NominationResult(nomination, "manual_review_needed", [_issue("missing_users", "No credited user was supplied; self-nominations need reviewer confirmation.")])
+        issue = _issue("missing_users", "No credited user was supplied; self-nominations need reviewer confirmation.")
+        stages.append(_stage("credited_users", "Credited users", "failed", issue.reason))
+        return NominationResult(nomination, "manual_review_needed", [issue], stage_checks=stages)
 
     wiki = get_wiki()
     if not wiki.exists(nomination.article):
-        return NominationResult(nomination, "failed_to_verify", [_issue("missing_article_page", f"[[{nomination.article}]] does not exist.")])
+        issue = _issue("missing_article_page", f"[[{nomination.article}]] does not exist.")
+        stages.append(_stage("article_page", "Article page exists", "failed", issue.reason, pages=[nomination.article]))
+        return NominationResult(nomination, "failed_to_verify", [issue], stage_checks=stages)
+    stages.append(_stage("article_page", "Article page exists", "passed", "Article page exists.", pages=[nomination.article]))
 
     if _contains_record(wiki.get_text(RECORDS_PAGE), nomination.article, nomination.users):
-        return NominationResult(nomination, "failed_to_verify", [_issue("duplicate_record", "The article and user already appear in the Four Award records.")])
+        issue = _issue("duplicate_record", "The article and user already appear in the Four Award records.")
+        stages.append(_stage("duplicate_record", "Existing Four Award record", "failed", issue.reason, pages=[RECORDS_PAGE]))
+        return NominationResult(nomination, "failed_to_verify", [issue], stage_checks=stages)
+    stages.append(_stage("duplicate_record", "Existing Four Award record", "passed", "No matching existing record was found.", pages=[RECORDS_PAGE]))
 
     history = _article_history_template(wiki.get_text(f"Talk:{nomination.article}"))
     if not history:
-        return NominationResult(nomination, "failed_to_verify", [_issue("missing_article_history", "The talk page does not contain {{Article history}} evidence.")])
+        issue = _issue("missing_article_history", "The talk page does not contain {{Article history}} evidence.")
+        stages.append(_stage("article_history", "Article history template", "failed", issue.reason, pages=[f"Talk:{nomination.article}"]))
+        return NominationResult(nomination, "failed_to_verify", [issue], stage_checks=stages)
+    stages.append(_stage("article_history", "Article history template", "passed", "{{Article history}} was found.", pages=[f"Talk:{nomination.article}"]))
     if not _has_fa_status(history):
-        return NominationResult(nomination, "failed_to_verify", [_issue("not_featured_article", "{{Article history}} does not show current FA status.")])
+        issue = _issue("not_featured_article", "{{Article history}} does not show current FA status.")
+        stages.append(_stage("fa_status", "Featured Article status", "failed", issue.reason, pages=[f"Talk:{nomination.article}"]))
+        return NominationResult(nomination, "failed_to_verify", [issue], stage_checks=stages)
+    stages.append(_stage("fa_status", "Featured Article status", "passed", "{{Article history}} shows FA status.", pages=[f"Talk:{nomination.article}"]))
 
     creation = wiki.page_creation(nomination.article)
     record = _record_for(nomination, history, creation.date)
@@ -229,12 +320,50 @@ def review_nomination(nomination: FourAwardNomination) -> NominationResult:
     ):
         if not value:
             issues.append(_issue("missing_milestone", f"Could not determine the {label}."))
+    stages.append(
+        _stage(
+            "milestone_dates",
+            "Milestone dates",
+            "failed" if issues else "passed",
+            "Could not determine all required milestone dates." if issues else "Creation, DYK, GA, and FA dates were found.",
+            details={
+                "creation_date": record.creation_date or "",
+                "dyk_date": record.dyk_date or "",
+                "ga_date": record.ga_date or "",
+                "fa_date": record.fa_date or "",
+            },
+        )
+    )
     if not issues:
-        issues.extend(_contribution_issues(nomination, history, record))
+        contribution_issues, contribution_stages = _contribution_review(nomination, history, record)
+        issues.extend(contribution_issues)
+        stages.extend(contribution_stages)
 
     if issues or not ALLOW_AUTOMATED_APPROVAL:
         if not ALLOW_AUTOMATED_APPROVAL:
-            issues.append(_issue("human_judgment_required", "Four Award credit requires reviewer judgment about the editor's contributions at each stage."))
-        return NominationResult(nomination, "manual_review_needed", issues, record)
+            issue = _issue(
+                "automated_approval_disabled",
+                "Automated approval is disabled by configuration; dry-run can verify evidence but will not approve.",
+            )
+            issues.append(issue)
+            stages.append(
+                _stage(
+                    "automated_approval",
+                    "Automated approval gate",
+                    "blocked",
+                    issue.reason,
+                    details={"allow_automated_approval": str(ALLOW_AUTOMATED_APPROVAL).lower()},
+                )
+            )
+        return NominationResult(nomination, "manual_review_needed", issues, record, stages)
 
-    return NominationResult(nomination, "approved", record=record)
+    stages.append(
+        _stage(
+            "automated_approval",
+            "Automated approval gate",
+            "passed",
+            "Automated approval is enabled and all evidence checks passed.",
+            details={"allow_automated_approval": str(ALLOW_AUTOMATED_APPROVAL).lower()},
+        )
+    )
+    return NominationResult(nomination, "approved", record=record, stage_checks=stages)
