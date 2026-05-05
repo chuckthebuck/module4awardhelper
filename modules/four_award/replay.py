@@ -34,6 +34,7 @@ class ReplayWiki:
     pages: dict[str, ReplayPage]
     existing: set[str] = field(default_factory=set)
     creation: dict[str, PageCreation] = field(default_factory=dict)
+    latest_revision_dates: dict[str, date] = field(default_factory=dict)
     users_by_title: dict[str, set[str]] = field(default_factory=dict)
     edits: list[ReplayEdit] = field(default_factory=list)
 
@@ -50,6 +51,9 @@ class ReplayWiki:
 
     def first_revision_date(self, title: str) -> date | None:
         return self.page_creation(title).date
+
+    def latest_revision_date(self, title: str) -> date | None:
+        return self.latest_revision_dates.get(title) or self.first_revision_date(title)
 
     def revision_users(self, title: str, start: date | None = None, end: date | None = None, limit: int = 500) -> set[str]:
         del start, end, limit
@@ -111,6 +115,14 @@ def _parse_creation(raw: dict[str, Any]) -> dict[str, PageCreation]:
     return creation
 
 
+def _parse_revision_dates(raw: dict[str, Any]) -> dict[str, date]:
+    return {
+        title: date.fromisoformat(value)
+        for title, value in raw.items()
+        if value
+    }
+
+
 def load_case(path: str | Path) -> dict[str, Any]:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
@@ -126,6 +138,7 @@ def build_replay_wiki(case: dict[str, Any]) -> ReplayWiki:
         pages=pages,
         existing=existing,
         creation=_parse_creation(case.get("page_creation", {})),
+        latest_revision_dates=_parse_revision_dates(case.get("latest_revision_dates", {})),
         users_by_title=users_by_title,
     )
 

@@ -283,9 +283,17 @@ Article: '''[[Murder of Wang Lianying]] ([[Talk:Murder of Wang Lianying|talk]], 
             "Template:Did you know nominations/Murder of Wang Lianying": {
                 "before_text": "[[User:Crisco 1492|Crisco 1492]]"
             },
-            "Talk:Murder of Wang Lianying/GA1": {"before_text": "[[User:Crisco 1492|Crisco 1492]]"},
+            "Talk:Murder of Wang Lianying/GA1": {
+                "before_text": (
+                    "[[User:Crisco 1492|Crisco 1492]]\n"
+                    "Article promoted by [[User:ChristieBot|ChristieBot]] 6 May 2025 (UTC)"
+                )
+            },
             "Wikipedia:Featured article candidates/Murder of Wang Lianying/archive1": {
-                "before_text": "[[User:Crisco 1492|Crisco 1492]]"
+                "before_text": (
+                    "[[User:Crisco 1492|Crisco 1492]]\n"
+                    "Promoted by [[User:FACBot|FACBot]] 23:06, 4 May 2026 (UTC)"
+                )
             },
         },
         "existing_pages": ["Murder of Wang Lianying"],
@@ -298,11 +306,20 @@ Article: '''[[Murder of Wang Lianying]] ([[Talk:Murder of Wang Lianying|talk]], 
             "Talk:Murder of Wang Lianying/GA1": ["Crisco 1492"],
             "Wikipedia:Featured article candidates/Murder of Wang Lianying/archive1": ["Crisco 1492"],
         },
+        "latest_revision_dates": {
+            "Talk:Murder of Wang Lianying/GA1": "2025-05-06",
+            "Wikipedia:Featured article candidates/Murder of Wang Lianying/archive1": "2026-05-04",
+        },
         "expected_result": {"approved": 1, "failed": 0, "manual": 0},
     }
 
     payload = run_replay_case(case)
     stages = payload["result"]["reviews"][0]["stage_checks"]
+    milestone_details = next(
+        stage["details"]
+        for stage in stages
+        if stage["key"] == "milestone_dates"
+    )
 
     assert any(
         stage["key"] == "article_history" and stage["status"] == "skipped"
@@ -312,6 +329,9 @@ Article: '''[[Murder of Wang Lianying]] ([[Talk:Murder of Wang Lianying|talk]], 
         stage["key"] == "fa_status" and stage["status"] == "passed"
         for stage in stages
     )
+    assert milestone_details["dyk_date"] == "23 November 2024"
+    assert milestone_details["ga_date"] == "2025-05-06"
+    assert milestone_details["fa_date"] == "2026-05-04"
 
 
 def test_replay_failure_shows_diff():

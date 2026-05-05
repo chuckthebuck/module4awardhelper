@@ -168,10 +168,60 @@ def _has_fa_status(history: str) -> bool:
     )
 
 
+def _date_from_text(text: str) -> str:
+    parsed = parse_date(text)
+    if parsed:
+        return to_iso(parsed)
+    match = re.search(
+        r"\b(\d{1,2}\s+[A-Z][a-z]+\s+\d{4}|[A-Z][a-z]+\s+\d{1,2},\s+\d{4}|\d{4}-\d{1,2}-\d{1,2})\b",
+        text,
+    )
+    return to_iso(match.group(1)) if match else ""
+
+
+def _bot_process_date(text: str, bot_names: tuple[str, ...]) -> str:
+    bot_lines = [
+        line
+        for line in text.splitlines()
+        if any(bot.casefold() in line.casefold() for bot in bot_names)
+    ]
+    for line in reversed(bot_lines):
+        found = _date_from_text(line)
+        if found:
+            return found
+    return ""
+
+
+def _latest_process_date(article: str, pages: list[str], bot_names: tuple[str, ...]) -> str:
+    wiki = get_wiki()
+    for page in pages:
+        if not page:
+            continue
+        title = _process_page_title(article, page)
+        bot_date = _bot_process_date(_safe_text(title), bot_names)
+        if bot_date:
+            return bot_date
+        try:
+            revision_date = wiki.latest_revision_date(title)
+        except Exception:
+            revision_date = None
+        if revision_date:
+            return to_iso(revision_date)
+    return ""
+
+
 def _record_for(nomination: FourAwardNomination, history: str, creation_date: Optional[date]) -> FourAwardRecord:
     dyk_date = _action_value(history, "DYK") or nomination.dyk or ""
-    ga_date = _action_value(history, "GAN") or _action_value(history, "GA")
-    fa_date = _action_value(history, "FAC") or _action_value(history, "FA")
+    ga_date = (
+        _action_value(history, "GAN")
+        or _action_value(history, "GA")
+        or _latest_process_date(nomination.article, _ga_pages(nomination, history), ("ChristieBot",))
+    )
+    fa_date = (
+        _action_value(history, "FAC")
+        or _action_value(history, "FA")
+        or _latest_process_date(nomination.article, _fa_pages(nomination, history), ("FACBot",))
+    )
     return FourAwardRecord(
         user=nomination.users[0],
         article=nomination.article,

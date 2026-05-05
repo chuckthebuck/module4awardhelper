@@ -73,6 +73,21 @@ class WikiClient:
     def first_revision_date(self, title: str) -> Optional[date]:
         return self.page_creation(title).date
 
+    def latest_revision_date(self, title: str) -> Optional[date]:
+        data = self._query_revisions(
+            title,
+            {
+                "rvlimit": "1",
+                "rvdir": "older",
+                "rvprop": "timestamp",
+            },
+        )
+        revisions = self._revisions_from_query(data)
+        if not revisions:
+            return None
+        timestamp = _parse_mw_timestamp(revisions[0].get("timestamp"))
+        return timestamp.date() if timestamp else None
+
     def page_creation(self, title: str) -> PageCreation:
         data = self._query_revisions(
             title,

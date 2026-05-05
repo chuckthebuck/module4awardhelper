@@ -6,10 +6,11 @@ def module_manifest():
         "name": "four_award",
         "repo": "https://github.com/chuckthebuck/module4awardhelper",
         "entry_point": "chuck_the_4awardhelper.service:run_four_award_sync",
+        "ui": True,
         "redis_namespace": "four_award",
         "title": "Chuck the 4awardhelper",
         "oauth_consumer_mode": "default",
-        "rights": ["manage", "run_jobs", "edit_config"],
+        "rights": ["manage", "view_jobs", "run_jobs", "edit_config"],
         "jobs": [
             {
                 "name": "four-award-sync",
