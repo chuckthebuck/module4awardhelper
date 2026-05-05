@@ -14,6 +14,8 @@ class FourAwardNomination:
     article: str
     dyknom: Optional[str] = None
     dyk: Optional[str] = None
+    ga: Optional[str] = None
+    fac: Optional[str] = None
     comments: Optional[str] = None
 
 

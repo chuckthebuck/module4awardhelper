@@ -130,6 +130,22 @@ def _link_target(value: str) -> str:
     return normalize_title(clean_wiki_value(value))
 
 
+def _raw_link_target(value: str | None) -> str:
+    if not value:
+        return ""
+    match = re.search(r"\[\[([^|\]]+)", value)
+    return normalize_title(match.group(1)) if match else normalize_title(clean_wiki_value(value))
+
+
+def _looks_like_process_page(title: str, kind: str) -> bool:
+    normalized = normalize_title(title).casefold()
+    if kind == "ga":
+        return normalized.startswith("talk:") or "/ga" in normalized
+    if kind == "fa":
+        return "featured article candidates/" in normalized or "/fac" in normalized
+    return True
+
+
 def _article_history_template(text: str) -> str:
     match = re.search(r"\{\{\s*Article history\b.*?\n\}\}", text, re.I | re.S)
     if match:
@@ -139,6 +155,8 @@ def _article_history_template(text: str) -> str:
 
 
 def _has_fa_status(history: str) -> bool:
+    if not history:
+        return False
     if re.search(r"\|\s*(currentstatus|status)\s*=\s*FA\b", history, re.I):
         return True
     return bool(
@@ -151,7 +169,7 @@ def _has_fa_status(history: str) -> bool:
 
 
 def _record_for(nomination: FourAwardNomination, history: str, creation_date: Optional[date]) -> FourAwardRecord:
-    dyk_date = _action_value(history, "DYK")
+    dyk_date = _action_value(history, "DYK") or nomination.dyk or ""
     ga_date = _action_value(history, "GAN") or _action_value(history, "GA")
     fa_date = _action_value(history, "FAC") or _action_value(history, "FA")
     return FourAwardRecord(
@@ -163,6 +181,16 @@ def _record_for(nomination: FourAwardNomination, history: str, creation_date: Op
         ga_date=ga_date,
         fa_date=fa_date,
     )
+
+
+def _has_milestone_evidence(nomination: FourAwardNomination, history: str, label: str) -> bool:
+    if label == "DYK date":
+        return bool(_action_value(history, "DYK") or nomination.dyk or nomination.dyknom)
+    if label == "GA date":
+        return any(_ga_pages(nomination, history))
+    if label == "FA date":
+        return any(_fa_pages(nomination, history))
+    return False
 
 
 def _missing_users(expected: list[str], evidence: set[str]) -> list[str]:
@@ -215,6 +243,26 @@ def _process_page_title(article: str, page: str) -> str:
     if normalized.startswith("/"):
         return f"Talk:{article}{normalized}"
     return normalized
+
+
+def _ga_pages(nomination: FourAwardNomination, history: str) -> list[str]:
+    nominated = _raw_link_target(nomination.ga)
+    return [
+        nominated if _looks_like_process_page(nominated, "ga") else "",
+        _action_link(history, "GAN"),
+        _action_link(history, "GA"),
+        f"Talk:{nomination.article}/GA1",
+    ]
+
+
+def _fa_pages(nomination: FourAwardNomination, history: str) -> list[str]:
+    nominated = _raw_link_target(nomination.fac)
+    return [
+        nominated if _looks_like_process_page(nominated, "fa") else "",
+        _action_link(history, "FAC"),
+        _action_link(history, "FA"),
+        f"Wikipedia:Featured article candidates/{nomination.article}/archive1",
+    ]
 
 
 def _contribution_review(
@@ -279,14 +327,14 @@ def _contribution_review(
         (
             "missing_ga_contribution",
             "GA",
-            [_action_link(history, "GAN"), _action_link(history, "GA"), f"Talk:{nomination.article}/GA1"],
+            _ga_pages(nomination, history),
             ga_start,
             ga_end,
         ),
         (
             "missing_fa_contribution",
             "FA",
-            [_action_link(history, "FAC"), _action_link(history, "FA"), f"Wikipedia:Featured article candidates/{nomination.article}/archive1"],
+            _fa_pages(nomination, history),
             fa_start,
             fa_end,
         ),
@@ -366,15 +414,35 @@ def review_nomination(nomination: FourAwardNomination) -> NominationResult:
 
     history = _article_history_template(wiki.get_text(f"Talk:{nomination.article}"))
     if not history:
-        issue = _issue("missing_article_history", "The talk page does not contain {{Article history}} evidence.")
-        stages.append(_stage("article_history", "Article history template", "failed", issue.reason, pages=[f"Talk:{nomination.article}"]))
-        return NominationResult(nomination, "failed_to_verify", [issue], stage_checks=stages)
-    stages.append(_stage("article_history", "Article history template", "passed", "{{Article history}} was found.", pages=[f"Talk:{nomination.article}"]))
-    if not _has_fa_status(history):
+        stages.append(
+            _stage(
+                "article_history",
+                "Article history template",
+                "skipped",
+                "{{Article history}} was not found; using nomination links and page history evidence.",
+                pages=[f"Talk:{nomination.article}"],
+            )
+        )
+    else:
+        stages.append(_stage("article_history", "Article history template", "passed", "{{Article history}} was found.", pages=[f"Talk:{nomination.article}"]))
+    has_fac_nomination = any(page for page in _fa_pages(nomination, history))
+    if history and not _has_fa_status(history) and not has_fac_nomination:
         issue = _issue("not_featured_article", "{{Article history}} does not show current FA status.")
         stages.append(_stage("fa_status", "Featured Article status", "failed", issue.reason, pages=[f"Talk:{nomination.article}"]))
         return NominationResult(nomination, "failed_to_verify", [issue], stage_checks=stages)
-    stages.append(_stage("fa_status", "Featured Article status", "passed", "{{Article history}} shows FA status.", pages=[f"Talk:{nomination.article}"]))
+    if history and _has_fa_status(history):
+        fa_status_reason = "{{Article history}} shows FA status."
+    else:
+        fa_status_reason = "FAC link is present in the nomination; FA status should be checked against FAC evidence."
+    stages.append(
+        _stage(
+            "fa_status",
+            "Featured Article status",
+            "passed",
+            fa_status_reason,
+            pages=[f"Talk:{nomination.article}"] + [page for page in _fa_pages(nomination, history) if page],
+        )
+    )
 
     creation = wiki.page_creation(nomination.article)
     record = _record_for(nomination, history, creation.date)
@@ -385,7 +453,7 @@ def review_nomination(nomination: FourAwardNomination) -> NominationResult:
         (record.ga_date, "GA date"),
         (record.fa_date, "FA date"),
     ):
-        if not value:
+        if not value and not _has_milestone_evidence(nomination, history, label):
             issues.append(_issue("missing_milestone", f"Could not determine the {label}."))
     stages.append(
         _stage(

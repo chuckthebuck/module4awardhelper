@@ -261,6 +261,59 @@ def test_one_line_article_history_params_are_split_cleanly():
     assert "Pages: [[Example article]]; [[Talk:Example article/GA1]]" in report
 
 
+def test_manual_nomination_links_work_without_article_history_template():
+    four_text = """== Current nominations ==
+===={{user|Crisco 1492}}====
+Article: '''[[Murder of Wang Lianying]] ([[Talk:Murder of Wang Lianying|talk]], [{{fullurl:Murder of Wang Lianying|action=history}} history])'''
+:[[File:Symbol draft class.svg|25px]] '''New article''': [{{fullurl:Murder of Wang Lianying|dir=prev&limit=1&action=history}} diff for creation]
+:[[File:Symbol question.svg|25px]] '''DYK''': [[Wikipedia:Did you know archive/2024/November#23 November 2024]] and [[Template:Did you know nominations/Murder of Wang Lianying|nomination]]
+:[[File:Symbol support vote.svg|25px]] '''GA''': [[Talk:Murder of Wang Lianying/GA1]]
+:[[File:Symbol star FA gold.svg|25px]] '''FA''': [[Wikipedia:Featured article candidates/Murder of Wang Lianying/archive1]]
+:: &nbsp;—&nbsp;[[User:Crisco 1492|Chris Woodrich]] ([[User talk:Crisco 1492|talk]]) 23:22, 4 May 2026 (UTC)
+"""
+    case = {
+        "settings": {"allow_automated_approval": True},
+        "pages": {
+            "Wikipedia:Four Award": {"before_text": four_text},
+            "Wikipedia:Four Award/Records": {
+                "before_text": "== Four Awards ==\n{| class=\"wikitable\"\n! User\n! Article\n|}\n"
+            },
+            "Talk:Murder of Wang Lianying": {"before_text": ""},
+            "User talk:Crisco 1492": {"before_text": ""},
+            "Template:Did you know nominations/Murder of Wang Lianying": {
+                "before_text": "[[User:Crisco 1492|Crisco 1492]]"
+            },
+            "Talk:Murder of Wang Lianying/GA1": {"before_text": "[[User:Crisco 1492|Crisco 1492]]"},
+            "Wikipedia:Featured article candidates/Murder of Wang Lianying/archive1": {
+                "before_text": "[[User:Crisco 1492|Crisco 1492]]"
+            },
+        },
+        "existing_pages": ["Murder of Wang Lianying"],
+        "page_creation": {
+            "Murder of Wang Lianying": {"user": "Crisco 1492", "date": "2024-01-01"}
+        },
+        "revision_users": {
+            "Murder of Wang Lianying": ["Crisco 1492"],
+            "Template:Did you know nominations/Murder of Wang Lianying": ["Crisco 1492"],
+            "Talk:Murder of Wang Lianying/GA1": ["Crisco 1492"],
+            "Wikipedia:Featured article candidates/Murder of Wang Lianying/archive1": ["Crisco 1492"],
+        },
+        "expected_result": {"approved": 1, "failed": 0, "manual": 0},
+    }
+
+    payload = run_replay_case(case)
+    stages = payload["result"]["reviews"][0]["stage_checks"]
+
+    assert any(
+        stage["key"] == "article_history" and stage["status"] == "skipped"
+        for stage in stages
+    )
+    assert any(
+        stage["key"] == "fa_status" and stage["status"] == "passed"
+        for stage in stages
+    )
+
+
 def test_replay_failure_shows_diff():
     case = {
         "pages": {

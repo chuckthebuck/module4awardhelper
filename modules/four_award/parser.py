@@ -121,6 +121,28 @@ def _first_link_after_label(block: str, label: str) -> str:
     return normalize_title(links[-1]) if links else ""
 
 
+def _link_after_label(block: str, label: str, fallback_index: int = -1) -> str:
+    match = re.search(rf"'''{re.escape(label)}'''\s*:\s*(.*)", block, re.I)
+    if not match:
+        return ""
+    line = match.group(1)
+    links = re.findall(r"\[\[([^|\]#]+)(?:#[^|\]]*)?(?:\|[^\]]*)?\]\]", line)
+    if not links:
+        return ""
+    if len(links) > abs(fallback_index):
+        return normalize_title(links[fallback_index])
+    return normalize_title(links[-1])
+
+
+def _first_date_after_label(block: str, label: str) -> str:
+    match = re.search(rf"'''{re.escape(label)}'''\s*:\s*(.*)", block, re.I)
+    if not match:
+        return ""
+    line = match.group(1)
+    date_match = re.search(r"\b(\d{1,2}\s+[A-Z][a-z]+\s+\d{4}|[A-Z][a-z]+\s+\d{1,2},\s+\d{4}|\d{4}-\d{1,2}-\d{1,2})\b", line)
+    return date_match.group(1) if date_match else ""
+
+
 def _manual_nomination_from_block(section_title: str, section_index: int, block: str) -> FourAwardNomination | None:
     article_match = re.search(r"Article:\s*'''?\s*\[\[([^|\]#]+)", block, re.I)
     if not article_match:
@@ -137,6 +159,9 @@ def _manual_nomination_from_block(section_title: str, section_index: int, block:
         users=users,
         article=article,
         dyknom=_first_link_after_label(block, "DYK"),
+        dyk=_first_date_after_label(block, "DYK"),
+        ga=_first_link_after_label(block, "GA"),
+        fac=_link_after_label(block, "FA", 0),
     )
 
 
@@ -164,6 +189,8 @@ def parse_nominations(page_text: str | None = None) -> List[FourAwardNomination]
                 article=article,
                 dyknom=clean_wiki_value(params.get("dyknom")),
                 dyk=clean_wiki_value(params.get("dyk")),
+                ga=clean_wiki_value(params.get("ga")),
+                fac=clean_wiki_value(params.get("fac")),
                 comments=clean_wiki_value(params.get("comments")),
             )
         )
