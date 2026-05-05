@@ -208,6 +208,59 @@ def test_historical_payload_can_ignore_current_records_table():
     )
 
 
+def test_placeholder_user_is_not_treated_as_real_user():
+    case = _successful_review_case()
+    case["settings"] = {"allow_automated_approval": True}
+    case["pages"]["Wikipedia:Four Award"]["before_text"] = """== Current nominations ==
+=== Diaspora Revolt ===
+{{Four Award Nomination
+ | article = Diaspora Revolt
+ | user = USERNAME(S) (remove if you are nominating yourself)
+}}
+"""
+    case["pages"]["Talk:Diaspora Revolt"] = {"before_text": ""}
+    case["existing_pages"] = ["Diaspora Revolt"]
+    case["page_creation"] = {"Diaspora Revolt": {"user": "RealUser", "date": "2020-01-01"}}
+    case["revision_users"] = {"Diaspora Revolt": ["RealUser"]}
+    case["expected_result"] = {"approved": 0, "failed": 0, "manual": 1}
+
+    payload = run_replay_case(case)
+
+    assert payload["result"]["reviews"][0]["users"] == []
+    assert payload["edits"] == [
+        {
+            "title": "Wikipedia:Four Award",
+            "summary": "Reply to Four Award nomination for [[Diaspora Revolt]]",
+        }
+    ]
+
+
+def test_one_line_article_history_params_are_split_cleanly():
+    case = _successful_review_case()
+    case["settings"] = {"allow_automated_approval": True}
+    case["pages"]["Talk:Example article"]["before_text"] = (
+        "{{Article history|action1=DYK|action1date=2 May 2018"
+        "|dykentry=... that the example exists?|dyknom=Template:Did you know nominations/Example article"
+        "|action1link=[[Template:Did you know nominations/Example article]]"
+        "|action2=GAN|action2date=2 January 2024|action2link=[[/GA1]]"
+        "|action3=FAC|action3date=03 April 2026|action3result=promoted"
+        "|action3link=[[Wikipedia:Featured article candidates/Example article/archive1]]"
+        "|currentstatus=FA}}\n"
+    )
+    case["page_creation"] = {"Example article": {"user": "Example", "date": "2018-03-29"}}
+    case["revision_users"]["Example article"] = ["Example"]
+    case["revision_users"]["Talk:Example article/GA1"] = ["Example"]
+    case["expected_result"] = {"approved": 1, "failed": 0, "manual": 0}
+
+    payload = run_replay_case(case)
+    review = payload["result"]["reviews"][0]
+    report = payload["result"]["dry_run_report"]["wikitext"]
+
+    assert review["stage_checks"][4]["details"]["dyk_date"] == "2 May 2018"
+    assert "dykentry=" not in review["stage_checks"][4]["details"]["dyk_date"]
+    assert "Pages: [[Example article]]; [[Talk:Example article/GA1]]" in report
+
+
 def test_replay_failure_shows_diff():
     case = {
         "pages": {

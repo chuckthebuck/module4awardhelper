@@ -88,7 +88,16 @@ def split_users(value: str | None) -> list[str]:
     for part in parts:
         part = normalize_title(part)
         key = normalize_user(part)
+        if _is_placeholder_user(key):
+            continue
         if part and key not in seen:
             users.append(part)
             seen.add(key)
     return users
+
+
+def _is_placeholder_user(normalized: str) -> bool:
+    return (
+        normalized in {"username", "username(s)", "user name", "usernames"}
+        or "remove if you are nominating yourself" in normalized
+    )

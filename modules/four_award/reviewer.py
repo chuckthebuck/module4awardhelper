@@ -60,26 +60,67 @@ def _action_date(text: str, action_name: str) -> Optional[date]:
 
 
 def _action_value(text: str, action_name: str) -> str:
-    for match in re.finditer(r"\|\s*action(\d+)\s*=\s*([^\n|]+)", text, re.I):
-        if action_name.casefold() not in match.group(2).casefold():
+    params = _template_params(text)
+    for key, value in params.items():
+        match = re.fullmatch(r"action(\d+)", key, re.I)
+        if not match or action_name.casefold() not in value.casefold():
             continue
-        index = match.group(1)
-        date_match = re.search(rf"^\|\s*action{index}date\s*=\s*([^\n]+)", text, re.I | re.M)
-        if date_match:
-            return date_match.group(1).strip()
-    direct = re.search(rf"^\|\s*{re.escape(action_name)}(?:date|_date)?\s*=\s*([^\n]+)", text, re.I | re.M)
-    return direct.group(1).strip() if direct else ""
+        return params.get(f"action{match.group(1)}date", "").strip()
+    return (
+        params.get(f"{action_name.casefold()}date")
+        or params.get(f"{action_name.casefold()}_date")
+        or ""
+    ).strip()
 
 
 def _action_link(text: str, action_name: str) -> str:
-    for match in re.finditer(r"\|\s*action(\d+)\s*=\s*([^\n|]+)", text, re.I):
-        if action_name.casefold() not in match.group(2).casefold():
+    params = _template_params(text)
+    for key, value in params.items():
+        match = re.fullmatch(r"action(\d+)", key, re.I)
+        if not match or action_name.casefold() not in value.casefold():
             continue
-        index = match.group(1)
-        link_match = re.search(rf"^\|\s*action{index}link\s*=\s*([^\n]+)", text, re.I | re.M)
-        if link_match:
-            return _link_target(link_match.group(1))
+        link_value = params.get(f"action{match.group(1)}link", "")
+        if link_value:
+            return _link_target(link_value)
     return ""
+
+
+def _template_params(template_text: str) -> dict[str, str]:
+    text = template_text.strip()
+    if text.startswith("{{") and text.endswith("}}"):
+        text = text[2:-2]
+    pieces: list[str] = []
+    current: list[str] = []
+    depth = 0
+    i = 0
+    while i < len(text):
+        pair = text[i : i + 2]
+        if pair in {"{{", "[["}:
+            depth += 1
+            current.append(pair)
+            i += 2
+            continue
+        if pair in {"}}", "]]"} and depth:
+            depth -= 1
+            current.append(pair)
+            i += 2
+            continue
+        if text[i] == "|" and depth == 0:
+            pieces.append("".join(current))
+            current = []
+            i += 1
+            continue
+        current.append(text[i])
+        i += 1
+    pieces.append("".join(current))
+
+    params: dict[str, str] = {}
+    for piece in pieces[1:]:
+        if "=" not in piece:
+            continue
+        key, value = piece.split("=", 1)
+        params[key.strip().casefold()] = value.strip()
+    return params
 
 
 def _link_target(value: str) -> str:
@@ -169,6 +210,13 @@ def _default_dyk_page(nomination: FourAwardNomination) -> str:
     return nomination.dyknom or f"Template:Did you know nominations/{nomination.article}"
 
 
+def _process_page_title(article: str, page: str) -> str:
+    normalized = normalize_title(page)
+    if normalized.startswith("/"):
+        return f"Talk:{article}{normalized}"
+    return normalized
+
+
 def _contribution_review(
     nomination: FourAwardNomination,
     history: str,
@@ -244,7 +292,15 @@ def _contribution_review(
         ),
     )
     for code, label, pages, start, end in checks:
-        clean_pages = [page for page in dict.fromkeys(pages) if page]
+        clean_pages = [
+            page
+            for page in dict.fromkeys(
+                _process_page_title(nomination.article, page)
+                for page in pages
+                if page
+            )
+            if page
+        ]
         evidence_users = _stage_evidence_users(nomination.article, clean_pages, start, end)
         missing = _missing_users(nomination.users, evidence_users)
         if missing:
