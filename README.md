@@ -2,7 +2,18 @@
 
 Cron-backed Buckbot module for conservatively reviewing and processing [[Wikipedia:Four Award]] nominations on English Wikipedia.
 
-This repository is intended to be loaded by the Buckbot module framework using `modules/four_award/module.toml`.
+This repository is a self-contained module package for the [Buckbot Framework](https://github.com/chuckthebuck/bucksaltbot2/tree/main/5).
+
+## Module Structure
+
+- `pyproject.toml` — Package metadata with Buckbot entry point
+- `modules/four_award/module.toml` — Module manifest (name, cron jobs, UI, docs)
+- `modules/four_award/service.py` — Cron job handler entry points
+- `modules/four_award/frontend/` — Vue app source
+- `modules/four_award/static/` — Built Vue app (committed to git)
+- `modules/four_award/docs/four_award.md` — User-facing documentation
+
+The framework loads this module by entry point at startup and serves the UI at `/modules/four_award/ui`.
 
 ## Safety model
 
@@ -42,9 +53,28 @@ Recommended rollout:
 
 ## Development
 
+### Building the Frontend
+
+```bash
+npm install
+npm run build
+```
+
+The built app is written to `modules/four_award/static/` and committed to git. The Buckbot Framework reads it from there.
+
+### Testing and Linting
+
+In this repo:
 ```bash
 PYTHONPATH=. python -m py_compile modules/four_award/*.py
-PYTHONPATH=. python -m pytest -q
+```
+
+Linting, type checking, and full module tests run in the framework repo context:
+```bash
+# In bucksaltbot2/5/
+python3 -m pylint modules.four_award
+npm run lint
+python3 -m pytest tests/test_module_registry.py
 ```
 
 ## Historic replay tests

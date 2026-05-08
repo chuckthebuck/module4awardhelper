@@ -151,9 +151,16 @@ def run_four_award_sync(ctx: Any | None = None, payload: dict[str, Any] | None =
     _apply_runtime_config(ctx)
     wiki.reset_dry_run_edits()
     payload = payload or {}
+    started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     if not ENABLED:
-        return {"status": "disabled"}
+        return {
+            "status": "disabled",
+            "run_kind": "disabled",
+            "has_nominations": False,
+            "nomination_count": 0,
+            "started_at": started_at,
+        }
 
     source_page_text = payload.get("four_page_text") or payload.get("page_text")
     previous_ignore_existing_records = reviewer.IGNORE_EXISTING_RECORDS
@@ -163,6 +170,17 @@ def run_four_award_sync(ctx: Any | None = None, payload: dict[str, Any] | None =
             reviewer.IGNORE_EXISTING_RECORDS,
         )
     nominations = parse_nominations(str(source_page_text) if source_page_text is not None else None)
+    nomination_count = len(nominations)
+
+    if nomination_count == 0:
+        return {
+            "status": "ok",
+            "run_kind": "empty",
+            "has_nominations": False,
+            "nomination_count": 0,
+            "dry_run": bool(config.DRY_RUN),
+            "started_at": started_at,
+        }
 
     approved: List[NominationResult] = []
     failed: List[NominationResult] = []
@@ -211,6 +229,11 @@ def run_four_award_sync(ctx: Any | None = None, payload: dict[str, Any] | None =
         }
 
     return {
+        "status": "ok",
+        "run_kind": "reviewed",
+        "has_nominations": True,
+        "nomination_count": nomination_count,
+        "processed_count": len(approved) + len(failed) + len(manual),
         "approved": len(approved),
         "failed": len(failed),
         "manual": len(manual),

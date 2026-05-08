@@ -341,8 +341,7 @@ def test_replay_failure_shows_diff():
                 "before_text": "== Current nominations ==\n",
                 "expected_text": "wrong\n",
             }
-        },
-        "expected_result": {"approved": 0, "failed": 0, "manual": 0},
+        }
     }
 
     with pytest.raises(ReplayFailure) as excinfo:

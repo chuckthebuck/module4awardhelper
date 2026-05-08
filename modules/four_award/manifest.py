@@ -11,6 +11,13 @@ def module_manifest():
         "title": "Chuck the 4awardhelper",
         "oauth_consumer_mode": "default",
         "rights": ["manage", "view_jobs", "run_jobs", "edit_config"],
+        "frontend": {
+            "script": "chuck_the_4awardhelper:static/four-award-app.js",
+            "styles": ["chuck_the_4awardhelper:static/style.css"],
+            "props_id": "four-award-props",
+            "mount_id": "app",
+            "docs": "chuck_the_4awardhelper:docs/four_award.md",
+        },
         "jobs": [
             {
                 "name": "four-award-sync",
