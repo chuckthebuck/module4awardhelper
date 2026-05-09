@@ -6,7 +6,8 @@ export default defineConfig({
   build: {
     lib: {
       entry: "modules/four_award/frontend/entry.ts",
-      formats: ["es"],
+      name: "FourAwardHelperApp",
+      formats: ["iife"],
       fileName: () => "four-award-app.js",
       cssFileName: "style",
     },
