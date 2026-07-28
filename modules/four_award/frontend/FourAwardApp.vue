@@ -35,19 +35,13 @@ const error = ref("");
 const success = ref("");
 const jobs = ref<Array<{ name: string; enabled: boolean }>>([]);
 const runs = ref<ModuleRunItem[]>([]);
+const scannedRunCount = ref(0);
+const requestedHitCount = ref(50);
+const usedRunCache = ref(false);
+const scanCapped = ref(false);
 const selectedJob = ref("");
 const historicalDiff = ref("");
 const selectedRunId = ref<number | null>(null);
-const nonBlankOnly = ref(false);
-
-function runHasNonBlankResult(run: ModuleRunItem): boolean {
-  const result = run.result;
-  if (!result) return run.status !== "succeeded";
-  if (result.has_nominations === true) return true;
-  if (Number(result.nomination_count || 0) > 0) return true;
-  if (Array.isArray(result.dry_run_edits) && result.dry_run_edits.length > 0) return true;
-  return result.run_kind !== "empty" && result.has_nominations !== false;
-}
 
 function runResultLabel(run: ModuleRunItem): string {
   const result = run.result;
@@ -60,9 +54,7 @@ function runResultLabel(run: ModuleRunItem): string {
   return result.run_kind || "Result";
 }
 
-const displayedRuns = computed(() =>
-  nonBlankOnly.value ? runs.value.filter(runHasNonBlankResult) : runs.value
-);
+const displayedRuns = computed(() => runs.value);
 
 const selectedRun = computed(
   () =>
@@ -99,6 +91,10 @@ async function loadRuns(): Promise<void> {
       enabled: job.enabled,
     }));
     runs.value = data.runs;
+    scannedRunCount.value = data.scanned;
+    requestedHitCount.value = data.hits;
+    usedRunCache.value = data.cache;
+    scanCapped.value = data.scan_capped;
     if (!selectedJob.value) {
       selectedJob.value = jobs.value.find((job) => job.enabled)?.name || jobs.value[0]?.name || "";
     }
@@ -219,13 +215,11 @@ onMounted(() => {
       <div>
         <div class="four-award-runs-header">
           <h3>Recent Runs</h3>
-          <label class="four-award-filter">
-            <input v-model="nonBlankOnly" type="checkbox">
-            <span>Non-blank only</span>
-          </label>
         </div>
         <p class="help-text">
-          Showing {{ displayedRuns.length }} of {{ runs.length }} runs.
+          Showing {{ displayedRuns.length }} of {{ requestedHitCount }} requested meaningful runs from {{ scannedRunCount }} scanned.
+          <span v-if="usedRunCache">Cached.</span>
+          <span v-if="scanCapped">Scan cap reached before enough hits were found.</span>
         </p>
         <table class="four-award-runs">
           <thead>
@@ -241,7 +235,7 @@ onMounted(() => {
           <tbody>
             <tr v-if="displayedRuns.length === 0">
               <td colspan="6">
-                {{ runs.length === 0 ? "No 4award runs recorded yet." : "No non-blank runs match the current filter." }}
+                No 4award runs with meaningful output were found.
               </td>
             </tr>
             <tr

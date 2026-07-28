@@ -5,8 +5,23 @@ export async function fetchFourAwardRuns(): Promise<{
   jobs: Array<{ name: string; enabled: boolean }>;
   runs: ModuleRunItem[];
   can_run: boolean;
+  hits: number;
+  limit: number;
+  non_blank: boolean;
+  returned: number;
+  cache: boolean;
+  scan_limit: number;
+  scanned: number;
+  scan_capped: boolean;
+  unique: boolean;
 }> {
-  const r = await fetch("/api/v1/four-award/runs");
+  const params = new URLSearchParams({
+    hits: "50",
+    non_blank: "1",
+    scan_limit: "50000",
+    unique: "0",
+  });
+  const r = await fetch(`/api/v1/four-award/runs?${params.toString()}`);
   const data = await r.json();
   if (!r.ok) {
     throw new Error(data?.detail || `Failed to fetch 4award runs: ${r.status}`);
@@ -16,6 +31,15 @@ export async function fetchFourAwardRuns(): Promise<{
     jobs: Array.isArray(data.jobs) ? data.jobs : [],
     runs: Array.isArray(data.runs) ? data.runs : [],
     can_run: !!data.can_run,
+    hits: Number(data.hits || 50),
+    limit: Number(data.limit || 50),
+    non_blank: !!data.non_blank,
+    returned: Number(data.returned || 0),
+    cache: data.cache === true,
+    scan_limit: Number(data.scan_limit || 50000),
+    scanned: Number(data.scanned || 0),
+    scan_capped: data.scan_capped === true,
+    unique: data.unique !== false,
   };
 }
 
